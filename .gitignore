@@ -3,6 +3,16 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+data/
+results/
+*.zip
+*.nii
+*.nii.gz
+__pycache__/
+.ipynb_checkpoints/
+*.pth
+*.ckpt
+
 # C extensions
 *.so
 
