@@ -226,3 +226,25 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+# Python / Conda
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+
+# Data & Heavy Weights 
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+*.nii
+*.nii.gz
+*.pth
+*.pt
+
+# VS Code & Notebooks
+.vscode/
+.ipynb_checkpoints/
