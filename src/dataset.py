@@ -8,6 +8,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import Dataset
 import nibabel as nib
 import numpy as np
@@ -24,15 +25,12 @@ class ACDCSAMMed3DDataset(Dataset):
         self.target_shape = target_shape
         
         if not self.data_dir.exists():
-            # print(f"⚠️ هشدار: پوشه داده‌ها در مسیر زیر وجود ندارد:\n   {self.data_dir}")
             print(f"⚠️ Warning: Data folder not found at:\n   {self.data_dir}")
             self.image_files = []
             return
 
-        # جستجوی تودرتو (rglob) برای پیدا کردن تمام فایل‌های تصویر در ساب‌فولدرها
         all_nii = list(self.data_dir.rglob("*.nii")) + list(self.data_dir.rglob("*.nii.gz"))
         
-        # فیلتر کردن فایل‌های GT و فایل‌های 4D
         self.image_files = sorted([
             f for f in all_nii 
             if "_gt" not in f.name 
@@ -41,7 +39,6 @@ class ACDCSAMMed3DDataset(Dataset):
         ])
 
         if len(self.image_files) == 0:
-            # print(f"⚠️ هشدار: هیچ فایل اسکن MRI در مسیر زیر یافت نشد:\n   {self.data_dir}")
             print(f"⚠️ Warning: No MRI scans found at:\n   {self.data_dir}")
 
     def __len__(self):
@@ -50,7 +47,6 @@ class ACDCSAMMed3DDataset(Dataset):
     def __getitem__(self, idx):
         img_path = self.image_files[idx]
         
-        # پیدا کردن مسیر فایل Ground Truth در همان پوشه بیمار
         if img_path.name.endswith(".nii.gz"):
             gt_name = img_path.name.replace(".nii.gz", "_gt.nii.gz")
         else:
@@ -59,28 +55,40 @@ class ACDCSAMMed3DDataset(Dataset):
         gt_path = img_path.parent / gt_name
 
         if not gt_path.exists():
-            # raise FileNotFoundError(f"❌ فایل Ground Truth معادل پیدا نشد:\n   {gt_path}")
             raise FileNotFoundError(f"❌ Corresponding Ground Truth file not found:\n   {gt_path}")
 
         img_obj = nib.load(img_path)
         gt_obj = nib.load(gt_path)
 
         img_data = img_obj.get_fdata().astype(np.float32)
-        gt_data = gt_obj.get_fdata().astype(np.int64)
+        gt_data = gt_obj.get_fdata().astype(np.float32) # تغییر به float32 برای Interpolate
 
         img_norm = normalize_nonzero_zscore(img_data)
-        bbox_3d = get_bounding_box_3d(gt_data, pad=2)
+
+        # آماده‌سازی ابعاد برای تابع Resize (نیاز به فرمت 1x1xHxWxD دارد)
+        img_tensor = torch.from_numpy(img_norm).unsqueeze(0).unsqueeze(0)
+        gt_tensor = torch.from_numpy(gt_data).unsqueeze(0).unsqueeze(0)
+
+        # تغییر اندازه (Resize) به 128x128x128
+        img_resized = F.interpolate(img_tensor, size=self.target_shape, mode='trilinear', align_corners=False)
+        gt_resized = F.interpolate(gt_tensor, size=self.target_shape, mode='nearest')
+
+        # حذف ابعاد اضافی
+        img_final = img_resized.squeeze(0)  # خروجی: (1, 128, 128, 128)
+        gt_final = gt_resized.squeeze(0).long()  # خروجی: (1, 128, 128, 128)
+
+        # محاسبه Bounding Box از روی لیبل جدید
+        gt_numpy = gt_final.squeeze(0).numpy()
+        bbox_3d = get_bounding_box_3d(gt_numpy, pad=2)
 
         if bbox_3d is None:
             bbox_3d = [0, 0, 0, 10, 10, 10]
 
-        img_tensor = torch.from_numpy(img_norm).unsqueeze(0).float()
-        gt_tensor = torch.from_numpy(gt_data).unsqueeze(0).long()
         bbox_tensor = torch.tensor(bbox_3d, dtype=torch.float32)
 
         return {
-            "image": img_tensor,
-            "label": gt_tensor,
+            "image": img_final,
+            "label": gt_final,
             "bbox": bbox_tensor,
             "filename": img_path.name
         }
