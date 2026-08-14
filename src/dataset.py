@@ -24,7 +24,8 @@ class ACDCSAMMed3DDataset(Dataset):
         self.target_shape = target_shape
         
         if not self.data_dir.exists():
-            print(f"⚠️ هشدار: پوشه داده‌ها در مسیر زیر وجود ندارد:\n   {self.data_dir}")
+            # print(f"⚠️ هشدار: پوشه داده‌ها در مسیر زیر وجود ندارد:\n   {self.data_dir}")
+            print(f"⚠️ Warning: Data folder not found at:\n   {self.data_dir}")
             self.image_files = []
             return
 
@@ -40,7 +41,8 @@ class ACDCSAMMed3DDataset(Dataset):
         ])
 
         if len(self.image_files) == 0:
-            print(f"⚠️ هشدار: هیچ فایل اسکن MRI در مسیر زیر یافت نشد:\n   {self.data_dir}")
+            # print(f"⚠️ هشدار: هیچ فایل اسکن MRI در مسیر زیر یافت نشد:\n   {self.data_dir}")
+            print(f"⚠️ Warning: No MRI scans found at:\n   {self.data_dir}")
 
     def __len__(self):
         return len(self.image_files)
@@ -57,7 +59,8 @@ class ACDCSAMMed3DDataset(Dataset):
         gt_path = img_path.parent / gt_name
 
         if not gt_path.exists():
-            raise FileNotFoundError(f"❌ فایل Ground Truth معادل پیدا نشد:\n   {gt_path}")
+            # raise FileNotFoundError(f"❌ فایل Ground Truth معادل پیدا نشد:\n   {gt_path}")
+            raise FileNotFoundError(f"❌ Corresponding Ground Truth file not found:\n   {gt_path}")
 
         img_obj = nib.load(img_path)
         gt_obj = nib.load(gt_path)
