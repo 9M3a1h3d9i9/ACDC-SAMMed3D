@@ -2,9 +2,11 @@ import os
 import sys
 from pathlib import Path
 import torch
+import torch.nn.functional as F
 import numpy as np
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
+from torch.amp import autocast
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -15,10 +17,42 @@ from src.model import load_sam_med3d_model
 from src.metrics import calculate_dice, calculate_iou
 
 
+def forward_sam_med3d(model, images, bboxes=None):
+    """
+    اجرای مدل به صورت Fully Automatic (بدون پرامپت جعبه) 
+    برای جلوگیری از باگ PromptEncoder دو بعدی در کتابخانه medim
+    """
+    image_embeddings = model.image_encoder(images)
+
+    # ارسال مقدار None برای تمامی پرامپت‌ها (آموزش کاملاً خودکار)
+    sparse_embeddings, dense_embeddings = model.prompt_encoder(
+        points=None,
+        boxes=None, 
+        masks=None,
+    )
+
+    low_res_masks, _ = model.mask_decoder(
+        image_embeddings=image_embeddings,
+        image_pe=model.prompt_encoder.get_dense_pe(),
+        sparse_prompt_embeddings=sparse_embeddings,
+        dense_prompt_embeddings=dense_embeddings,
+        multimask_output=False,
+    )
+
+    if low_res_masks.shape[2:] != images.shape[2:]:
+        low_res_masks = F.interpolate(
+            low_res_masks,
+            size=images.shape[2:],
+            mode="trilinear",
+            align_corners=False
+        )
+
+    return low_res_masks
+
+
 def plot_slice_comparison(image_3d, gt_3d, pred_3d, save_path, slice_idx=None):
-    """ذخیره تصویر مقایسه‌ای از یک اسلایس از اسکن ۳ بعدی"""
     if slice_idx is None:
-        slice_idx = image_3d.shape[0] // 2  # انتخاب اسلایس میانی
+        slice_idx = image_3d.shape[0] // 2
 
     img_slice = image_3d[slice_idx]
     gt_slice = gt_3d[slice_idx]
@@ -44,39 +78,33 @@ def plot_slice_comparison(image_3d, gt_3d, pred_3d, save_path, slice_idx=None):
 
 
 def evaluate_model():
+    # مستقیماً مسیر درست را می‌دهیم و تغییرش نمی‌دهیم
     DATA_DIR = PROJECT_ROOT / "data" / "ACDC" / "database" / "training"
-    if not any(DATA_DIR.glob("*.nii*")):
-        DATA_DIR = PROJECT_ROOT / "data" / "raw"
+    # if not any(DATA_DIR.glob("*.nii*")):
+        #     DATA_DIR = PROJECT_ROOT / "data" / "raw"
 
     MODEL_PATH = PROJECT_ROOT / "ckpt" / "best_sam_med3d_acdc.pth"
     OUTPUT_DIR = PROJECT_ROOT / "results"
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-    # print(f"🔍 اجرای ارزیابی روی دستگاه: {DEVICE}")
     print(f"🔍 Running evaluation on device: {DEVICE}")
 
-    # test_dataset = ACDCSAMMed3DDataset(data_dir=str(DATA_DIR))
-    # if len(test_dataset) == 0:
-    #     print("❌ هیچ داده‌ای برای ارزیابی یافت نشد.")
-        # print("❌ No evaluation data found.")
-    #     return
-
-    # test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
-    # ------------------------------------------------------------------------------------
-    # برای جلوگیری از ارزیابی روی همه داده‌ها، میتوانید از همان random_split استفاده کنید
     full_dataset = ACDCSAMMed3DDataset(data_dir=str(DATA_DIR))
+    if len(full_dataset) == 0:
+        print("❌ No evaluation data found.")
+        return
+
     train_size = int(0.8 * len(full_dataset))
     val_size = len(full_dataset) - train_size
     
     _, test_dataset = torch.utils.data.random_split(
         full_dataset, [train_size, val_size], 
-        generator=torch.Generator().manual_seed(42) # استفاده از سید مشترک برای انتخاب همان داده‌های قبلی
+        generator=torch.Generator().manual_seed(42)
     )
     
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
-    # بارگذاری مدل
     model = load_sam_med3d_model(
         checkpoint_path=str(MODEL_PATH if MODEL_PATH.exists() else PROJECT_ROOT.parent / "SAM_Med3D" / "ckpt" / "sam_med3d_turbo.pth"),
         device=DEVICE
@@ -86,7 +114,6 @@ def evaluate_model():
     total_dice = 0.0
     total_iou = 0.0
 
-    # print("📊 در حال محاسبه متریژها و تولید تصاویر خروجی...")
     print("📊 Calculating metrics and generating visual outputs...")
 
     with torch.no_grad():
@@ -96,29 +123,25 @@ def evaluate_model():
             bboxes = batch["bbox"].to(DEVICE)
             filename = batch["filename"][0]
 
-            try:
-                outputs = model(images, bboxes)
-            except TypeError:
-                outputs = model(images)
-
-            dice = calculate_dice(outputs, labels)
-            iou = calculate_iou(outputs, labels)
-
-            total_dice += dice
-            total_iou += iou
-
-            # تبدیل خروجی‌ها به حالت ۳ بعدی برای رسم
-            if outputs.ndim == 5 and outputs.shape[1] > 1:
-                preds = torch.argmax(outputs, dim=1).squeeze(0).cpu().numpy()
+            if DEVICE == 'cuda':
+                with autocast('cuda'):
+                    outputs = forward_sam_med3d(model, images, bboxes)
             else:
-                preds = (torch.sigmoid(outputs) > 0.5).squeeze().cpu().numpy()
+                outputs = forward_sam_med3d(model, images, bboxes)
 
+            preds = (torch.sigmoid(outputs) > 0.5).float()
+            dice = calculate_dice(preds, labels)
+            iou = calculate_iou(preds, labels)
+
+            total_dice += dice.item() if isinstance(dice, torch.Tensor) else dice
+            total_iou += iou.item() if isinstance(iou, torch.Tensor) else iou
+
+            preds_np = preds.squeeze().cpu().numpy()
             img_np = images.squeeze().cpu().numpy()
             gt_np = labels.squeeze().cpu().numpy()
 
-            # ذخیره خروجی تصویری نمونه
             save_img_path = OUTPUT_DIR / f"pred_{filename.split('.')[0]}.png"
-            plot_slice_comparison(img_np, gt_np, preds, save_img_path)
+            plot_slice_comparison(img_np, gt_np, preds_np, save_img_path)
 
             print(f"[{i+1}/{len(test_loader)}] File: {filename} | Dice: {dice:.4f} | IoU: {iou:.4f}")
 
@@ -126,11 +149,8 @@ def evaluate_model():
     avg_iou = total_iou / len(test_loader)
 
     print("\n==========================================")
-    # print(f"🎯 میانگین شاخص Dice: {avg_dice:.4f}")
     print(f"🎯 Average Dice Score: {avg_dice:.4f}")
-    # print(f"🎯 میانگین شاخص IoU:  {avg_iou:.4f}")
     print(f"🎯 Average IoU Score:  {avg_iou:.4f}")
-    # print(f"📁 خروجی‌های تصویری در پوشه ذخیره شدند:\n   {OUTPUT_DIR}")
     print(f"📁 Visual outputs saved to:\n   {OUTPUT_DIR}")
     print("==========================================")
 
