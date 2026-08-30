@@ -1,34 +1,35 @@
 # ACDC-SAMMed3D
 
-> 3D medical image segmentation research using SAM-Med3D and the ACDC cardiac imaging dataset.
+> **3D Medical Image Segmentation Research** using the ACDC cardiac dataset and SAM-Med3D-style foundation-model workflows.
 
 ## Overview
 
-ACDC-SAMMed3D is an end-to-end research framework for exploring 3D foundation-model approaches to cardiac medical-image segmentation. It uses volumetric data rather than independent 2D slices and investigates prompt-driven segmentation with a pretrained SAM-Med3D model.
+ACDC-SAMMed3D is an applied medical-AI research project focused on volumetric cardiac image segmentation. It investigates how 3D foundation-model approaches can be integrated into a reproducible segmentation pipeline instead of treating a volume as independent 2D slices.
 
-## Key Components
-
-- Full 3D medical-image pipeline
-- Dynamic 3D bounding-box prompts from ground-truth masks
-- Combined Dice and Cross-Entropy loss
-- Modular dataset, preprocessing, model, loss, and metric components
-- Training and evaluation scripts
-
-## Architecture
+## Research Pipeline
 
 ```text
 ACDC Volumes
      ↓
-Preprocessing / Normalization
+Preprocessing & Normalization
      ↓
 3D Prompt Generation
      ↓
-SAM-Med3D
+SAM-Med3D-based Model
      ↓
-Segmentation Mask
+Predicted Segmentation
      ↓
-Dice / IoU Evaluation
+Dice / IoU / Visual Analysis
 ```
+
+## Key Components
+
+- 3D medical-image data pipeline
+- Dynamic bounding-box prompt generation from masks
+- Modular dataset and preprocessing components
+- Segmentation loss and metric modules
+- Training and evaluation entry points
+- Experiment-oriented result organization
 
 ## Repository Structure
 
@@ -52,38 +53,32 @@ ACDC-SAMMed3D/
 
 ## Evaluation
 
-The framework is designed to evaluate segmentation with:
+The intended evaluation protocol includes:
 
 - Dice Similarity Coefficient (DSC)
 - Intersection over Union (IoU)
-- Visual prediction comparisons
+- Qualitative prediction comparisons
+- Robustness and cross-validation analysis as the project matures
 
-No new benchmark number is claimed by this README unless it is backed by an executed experiment.
+**Research integrity:** this README does not claim a new benchmark number unless it is supported by an executed experiment.
 
 ## Development Status
 
-**Research project / active refinement.**
+**Research project / active refinement.** The repository has a structured implementation foundation, while reproducibility, dependency management, experiment tracking, and broader validation remain ongoing work.
 
-The current repository provides a structured implementation foundation. Reproducibility, dependency pinning, experiment configuration, and broader validation can be strengthened as development continues.
+## Roadmap
 
-## Future Work
-
-- Reproducible configuration management
-- Automated tests
-- Experiment tracking
-- Robust checkpoint management
-- Additional segmentation metrics
-- Cross-validation / robustness analysis
-- Better documentation of preprocessing and model dependencies
+- [ ] Pin reproducible dependencies and model versions.
+- [ ] Add automated tests for preprocessing, prompts, losses, and metrics.
+- [ ] Improve checkpoint and experiment management.
+- [ ] Add stronger evaluation and visualization tooling.
+- [ ] Perform robustness and cross-validation studies.
+- [ ] Document preprocessing and model assumptions in detail.
 
 ## Technology
 
-Python • PyTorch • NumPy • NiBabel • 3D Medical Imaging • SAM-Med3D
-
-## Acknowledgments
-
-This work builds on the SAM-Med3D ecosystem and the ACDC dataset.
+`Python` · `PyTorch` · `NumPy` · `NiBabel` · `3D Medical Imaging` · `SAM-Med3D`
 
 ## Author
 
-Mohammad Mahdi Shafighi — M.Sc. Artificial Intelligence
+**Mohammad Mahdi Shafighi** — M.Sc. Artificial Intelligence
